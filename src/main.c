@@ -1,8 +1,17 @@
 #include "genesis.h"
 
+// preserve compatibility with old resources name
+#define logo_lib sgdk_logo
+#define font_lib font_default
+#define font_pal_lib font_pal_default
+
 // GFX part
 
 #include "gfx.h"
+
+// Open-Everdrive custom lib
+
+#include "OpenEd.h"
 
 // Variable part
 
@@ -79,7 +88,7 @@ int main(bool hardReset)
     while(TRUE)
     {
         // Read Joypad states
-        handleInput();
+        //handleInput();
 
         // always call this method at the end of the frame
         SYS_doVBlankProcess();
@@ -240,4 +249,14 @@ static void UpdateMenu(int PosX,int PosY)
             VDP_drawText("NO",16,19);
         }
     }
+	
+	if ( PosX == 10 && PosY == 16 ) ////// OPTIONS //////
+    {
+	     OpenEd_DebugLed_ON();
+	}
+	
+	if ( PosX == 10 && PosY == 18 ) ////// CREDITS //////
+    {
+		 OpenEd_DebugLed_OFF();
+	}
 }
