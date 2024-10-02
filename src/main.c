@@ -191,6 +191,11 @@ static void ClearMenu()
 
 static void UpdateMenu(int PosX,int PosY)
 {
+	
+	if ( PosX == 10 && PosY == 8 ) ////// Start ROM //////
+    {
+	     OpenEd_Start_ROM();
+	}
 
     if ( PosX == 10 && PosY == 14 ) ////// SYSTEM INFORMATION //////
     {
