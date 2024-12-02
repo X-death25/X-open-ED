@@ -5,6 +5,9 @@
 #define font_lib font_default
 #define font_pal_lib font_pal_default
 
+// Put function in .data (RAM) instead of the default .text
+#define RAM_SECT __attribute__((section(".ramprog")))
+
 // GFX part
 
 #include "gfx.h"
@@ -30,7 +33,6 @@ static void joyEvent(u16 joy, u16 changed, u16 state);
 static void UpdateCursor(int PosX,int PosY);
 static void ClearMenu();
 static void UpdateMenu(int PosX,int PosY);
-
 
 int main(bool hardReset)
 {
@@ -78,6 +80,10 @@ int main(bool hardReset)
 
     PosX=10;
     PosY=8;
+	
+	// Copy critical function to RAM
+	
+	//memcpy((unsigned char *)Start_RAM_Wait, (unsigned char *)RAM_Wait, sizeof(RAM_Wait));
 
     // VDP process done, we can re enable interrupts
     SYS_enableInts();

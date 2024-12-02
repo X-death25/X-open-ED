@@ -9,8 +9,17 @@
 
 #include "types.h"
  
-#define CTRL_REG 0xA130F0 //control register
+//#define CTRL_REG        0xA130E0 //control register
+#define CTRL_REG        *((vu16 *) 0xA130E0
 
+#define CTRL_SRM_ON     0x01// 4MB ROM ro 2MB ROM + 128KB SRAM
+#define CTRL_RESERVED   0x02// unused
+#define CTRL_ROM_BANK   0x04// ROM bank select (1=MENU or 0=GAME)
+#define CTRL_LED        0x08// led controll
+#define CTRL_EXP_SS     0x10// expansion SPI chip select
+#define CTRL_SDC_SS     0x20// SD card chip select (SPI)
+#define CTRL_SPI_CLK    0x40// SD card clock
+#define CTRL_SPI_MOSI   0x80// SD card data input
 
 /**
  *  \brief
