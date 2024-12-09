@@ -20,6 +20,11 @@
 #define CTRL_SDC_SS     0x20// SD card chip select (SPI)
 #define CTRL_SPI_CLK    0x40// SD card clock
 #define CTRL_SPI_MOSI   0x80// SD card data input
+#define CTRL_SPI_MISO   0x01// SD card data output
+
+#define SPI_SEL_OFF     0
+#define SPI_SEL_SDC     1
+#define SPI_SEL_EXP     2
 
 /**
  *  \brief
@@ -41,7 +46,7 @@ void OpenEd_Set_Bank0(void);
 
 /**
  *  \brief
- *      Activate Bank 1 used for the bios area
+ *      Activate Bank 1 used for the BIOS area
  */
 void OpenEd_Set_Bank1(void);
 
@@ -50,3 +55,21 @@ void OpenEd_Set_Bank1(void);
  *      Activate Bank 0 and jump to it for start the ROM
  */
 void OpenEd_Start_ROM(void);
+
+/**
+ *  \brief
+ *      Read a byte from SPI BUS
+ */
+unsigned char OpenEd_SPI_Read(void);
+
+/**
+ *  \brief
+ *      Write a byte to SPI BUS
+ */
+void OpenEd_SPI_Write(unsigned char val);
+
+/**
+ *  \brief
+ *      Select SPI BUS target : 0 for disable , 1 for SD Card , 2 for EXP
+ */
+void OpenEd_SPI_Select(unsigned char target); 
