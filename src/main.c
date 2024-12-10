@@ -12,9 +12,14 @@
 
 #include "gfx.h"
 
-// Open-Everdrive custom lib
+// Open-Everdrive custom Library
 
 #include "OpenEd.h"
+
+// FatFS Library
+
+#include "ffconf.h" /* Declarations of FatFs Config File */
+#include "ff.h"		/* Declarations of FatFs API */
 
 // Variable part
 
