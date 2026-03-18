@@ -70,6 +70,12 @@ void OpenEd_SPI_Write(unsigned char val);
 
 /**
  *  \brief
+ *      Read and Write a byte simultaneously
+ */
+unsigned char OpenEd_SPI_Read_Write(unsigned char val);
+
+/**
+ *  \brief
  *      Select SPI BUS target : 0 for disable , 1 for SD Card , 2 for EXP
  */
 void OpenEd_SPI_Select(unsigned char target); 

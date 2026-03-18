@@ -12,15 +12,41 @@
 /* Platform dependent macros and functions needed to be modified           */
 /*-------------------------------------------------------------------------*/
 
-#define CS_LOW()  OpenEd_SPI_Select(1)   /* Set CS low */
-#define CS_HIGH() OpenEd_SPI_Select(0)   /* Set CS high */
+#define CS_LOW()  OpenEd_SPI_Select(1)   /* Set SPI CS low */
+#define CS_HIGH() OpenEd_SPI_Select(0)   /* Set SPI CS high */
 
-void dly_100us (void)	/* Delay 100 microseconds */
+/*
+ * Délais calibrés pour 68000 @ 7.67MHz (Mega Drive PAL/NTSC)
+ *
+ * NOP = 4 cycles sur 68000
+ * 1 cycle = 1 / 7,670,000 s ≈ 130ns
+ * 100µs = 767 cycles ≈ 192 NOPs
+ *
+ * Note : la boucle for elle-même coûte ~8 cycles (dbra/cmp+branch),
+ * on ajuste à 170 itérations pour compenser overhead de boucle.
+ */
+
+void dly_100us(void)  /* Délai ~100 microsecondes */
 {
-	unsigned long tmp=0;
-    for(tmp=0; tmp<14; tmp++)
-    {
-        asm("nop\n");
+    unsigned short tmp;
+    for (tmp = 0; tmp < 170; tmp++) {
+        asm volatile("nop");
+    }
+}
+
+void dly_1ms(void)    /* Délai ~1 milliseconde */
+{
+    unsigned short tmp;
+    for (tmp = 0; tmp < 10; tmp++) {
+        dly_100us();
+    }
+}
+
+void dly_10ms(void)   /* Délai ~10 millisecondes */
+{
+    unsigned short tmp;
+    for (tmp = 0; tmp < 100; tmp++) {
+        dly_100us();
     }
 }
 
@@ -31,7 +57,7 @@ void spi_write(unsigned char data)
 
 unsigned char spi_read (unsigned char data) 
   {
-    return OpenEd_SPI_Read();
+    return OpenEd_SPI_Read_Write(data);
   }
   
 
@@ -75,19 +101,11 @@ BYTE CardType;			/* b0:MMC, b1:SDv1, b2:SDv2, b3:Block addressing */
 /* Transmit bytes to the card (bitbanging)                               */
 /*-----------------------------------------------------------------------*/
 
-static
-void xmit_mmc (
-	const BYTE* buff,	/* Data to be sent */
-	UINT bc				/* Number of bytes to send */
-)
+static void xmit_mmc(const BYTE *buff, UINT bc)
 {
-	BYTE d;
-
-
-	do {
-		d = *buff++;	/* Get a byte to be sent */
-		spi_write(d);
-	} while (--bc);
+    do {
+        OpenEd_SPI_Read_Write(*buff++);
+    } while (--bc);
 }
 
 
@@ -95,18 +113,11 @@ void xmit_mmc (
 /* Receive bytes from the card                                           */
 /*-----------------------------------------------------------------------*/
 
-static
-void rcvr_mmc (
-	BYTE *buff,	/* Pointer to read buffer */
-	UINT bc		/* Number of bytes to receive */
-)
+static void rcvr_mmc(BYTE *buff, UINT bc)
 {
-	BYTE r;
-
-	do {
-		r = spi_read(0xFF);
-		*buff++ = r;			/* Store a received byte */
-	} while (--bc);
+    do {
+        *buff++ = OpenEd_SPI_Read_Write(0xFF);
+    } while (--bc);
 }
 
 
@@ -303,7 +314,7 @@ DSTATUS disk_initialize (
 	if (drv) return RES_NOTRDY;
 
 	//dly_us(10000);			/* 10ms */
-  delay(10);
+  dly_10ms();
 	//CS_INIT(); CS_H();		/* Initialize port pin tied to CS */
 	//CK_INIT(); CK_L();		/* Initialize port pin tied to SCLK */
 //	DI_INIT();				/* Initialize port pin tied to DI */
@@ -319,7 +330,8 @@ DSTATUS disk_initialize (
 				for (tmr = 1000; tmr; tmr--) {			/* Wait for leaving idle state (ACMD41 with HCS bit) */
 					if (send_cmd(ACMD41, 1UL << 30) == 0) break;
 					//dly_us(1000);
-          delay(1);
+         // delay(1);
+		 dly_1ms();
 				}
 				if (tmr && send_cmd(CMD58, 0) == 0) {	/* Check CCS bit in the OCR */
 					rcvr_mmc(buf, 4);
@@ -335,7 +347,7 @@ DSTATUS disk_initialize (
 			for (tmr = 1000; tmr; tmr--) {			/* Wait for leaving idle state */
 				if (send_cmd(cmd, 0) == 0) break;
 				//dly_us(1000);
-        delay(1);
+        dly_1ms();
 			}
 			if (!tmr || send_cmd(CMD16, 512) != 0)	/* Set R/W block length to 512 */
 				ty = 0;

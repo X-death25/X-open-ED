@@ -20,6 +20,8 @@
 
 
 //#include <string.h>
+#include "genesis.h"
+
 #include "ff.h"			/* Declarations of FatFs API */
 #include "diskio.h"		/* Declarations of device I/O functions */
 
@@ -611,6 +613,36 @@ static const BYTE DbcTbl[] = MKCVTBL(TBL_DC, FF_CODE_PAGE);
    Module Private Functions
 
 ---------------------------------------------------------------------------*/
+
+int custom_memcmp(const void *ptr1, const void *ptr2, size_t num) {
+    const unsigned char *p1 = (const unsigned char *)ptr1;
+    const unsigned char *p2 = (const unsigned char *)ptr2;
+
+    for (size_t i = 0; i < num; i++) {
+        if (p1[i] != p2[i]) {
+            return (p1[i] > p2[i]) ? 1 : -1;
+        }
+    }
+
+    return 0; // Les blocs de mémoire sont identiques
+}
+
+char *custom_strchr(const char *str, int c) {
+    // Parcourir la chaîne jusqu'à trouver le caractère ou atteindre la fin
+    while (*str) {
+        if (*str == (char)c) {
+            return (char *)str; // Retourne un pointeur vers la première occurrence
+        }
+        str++;
+    }
+
+    // Vérifie si c est le caractère nul '\0'
+    if (c == '\0') {
+        return (char *)str;
+    }
+
+    return NULL; // Retourne NULL si le caractère n'est pas trouvé
+}
 
 
 /*-----------------------------------------------------------------------*/
@@ -2468,7 +2500,7 @@ static FRESULT dir_find (	/* FR_OK(0):succeeded, !=0:error */
 		}
 #else		/* Non LFN configuration */
 		dp->obj.attr = dp->dir[DIR_Attr] & AM_MASK;
-		if (!(dp->dir[DIR_Attr] & AM_VOL) && !memcmp(dp->dir, dp->fn, 11)) break;	/* Is it a valid entry? */
+		if (!(dp->dir[DIR_Attr] & AM_VOL) && !custom_memcmp(dp->dir, dp->fn, 11)) break;	/* Is it a valid entry? */
 #endif
 		res = dir_next(dp, 0);	/* Next entry */
 	} while (res == FR_OK);
@@ -3048,7 +3080,7 @@ static FRESULT create_name (	/* FR_OK: successful, FR_INVALID_NAME: could not cr
 			sfn[i++] = c;
 			sfn[i++] = d;
 		} else {						/* SBC */
-			if (strchr("*+,:;<=>[]|\"\?\x7F", (int)c)) return FR_INVALID_NAME;	/* Reject illegal chrs for SFN */
+			if (custom_strchr("*+,:;<=>[]|\"\?\x7F", (int)c)) return FR_INVALID_NAME;	/* Reject illegal chrs for SFN */
 			if (IsLower(c)) c -= 0x20;	/* To upper */
 			sfn[i++] = c;
 		}
@@ -3321,7 +3353,7 @@ static UINT check_fs (	/* 0:FAT/FAT32 VBR, 1:exFAT VBR, 2:Not FAT and valid BS, 
 #endif
 	b = fs->win[BS_JmpBoot];
 	if (b == 0xEB || b == 0xE9 || b == 0xE8) {	/* Valid JumpBoot code? (short jump, near jump or near call) */
-		if (sign == 0xAA55 && !memcmp(fs->win + BS_FilSysType32, "FAT32   ", 8)) {
+		if (sign == 0xAA55 && !custom_memcmp(fs->win + BS_FilSysType32, "FAT32   ", 8)) {
 			return 0;	/* It is an FAT32 VBR */
 		}
 		/* FAT volumes created in the early MS-DOS era lack BS_55AA and BS_FilSysType, so FAT VBR needs to be identified without them. */
