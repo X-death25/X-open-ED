@@ -10,7 +10,7 @@
 #include "types.h"
  
 //#define CTRL_REG        0xA130E0 //control register
-#define CTRL_REG        *((vu16 *) 0xA130E0
+#define CTRL_REG        *((vu16 *) 0xA130E0)
 
 #define CTRL_SRM_ON     0x01// 4MB ROM ro 2MB ROM + 128KB SRAM
 #define CTRL_RESERVED   0x02// unused
@@ -25,6 +25,12 @@
 #define SPI_SEL_OFF     0
 #define SPI_SEL_SDC     1
 #define SPI_SEL_EXP     2
+
+/**
+ *  \brief
+ *      Init OpenEd mapper
+ */
+void OpenEd_Init(void);
 
 /**
  *  \brief
@@ -73,6 +79,12 @@ void OpenEd_SPI_Write(unsigned char val);
  *      Read and Write a byte simultaneously
  */
 unsigned char OpenEd_SPI_Read_Write(unsigned char val);
+
+/**
+ *  \brief
+ *      Read a byte from SPI BUS (fast mode via auto-CLK hardware)
+ */
+unsigned char OpenEd_SPI_ReadFast(void);
 
 /**
  *  \brief

@@ -1,4 +1,5 @@
 #include "genesis.h"
+#include "explorer.h"
 
 #define logo_lib sgdk_logo
 #define font_lib font_default
@@ -11,6 +12,9 @@
 #include "ffconf.h"
 #include "ff.h"
 #include "diskio.h"
+
+/*global */
+volatile u8 appMode = 0;  /* 0 = menu principal, 1 = explorateur */
 
 volatile int PosX = 10;
 volatile int PosY = 8;
@@ -32,10 +36,10 @@ int main(bool hardReset)
     UINT  bw;
     FRESULT res;
 
-    SYS_disableInts();
-    VDP_setScreenWidth320();
-
-    JOY_setEventHandler(joyEvent);
+	SYS_disableInts();
+	VDP_setScreenWidth320();
+	OpenEd_Init();  
+	JOY_setEventHandler(joyEvent);
 
     PAL_setColors(0, (u16*)main_title.palette->data, 16, CPU);
 
@@ -58,60 +62,49 @@ int main(bool hardReset)
 
     PosX = 10;
     PosY = 8;
+	SYS_enableInts();
+	VDP_drawText("Avant mount...", 0, 20);
+	
+	OpenEd_DebugLed_ON();
+	dly_10ms();
+	OpenEd_DebugLed_OFF();
 
-    /* ------------------------------------------------------------------ */
-    /* Init SD / FatFS                                                     */
-    /* ------------------------------------------------------------------ */
+	/* 80 dummy clocks */
+	{
+		BYTE buf[1];
+		OpenEd_SPI_Select(SPI_SEL_OFF);
+		for (u8 n = 10; n; n--)
+			buf[0] = OpenEd_SPI_Read_Write(0xFF);
+		VDP_drawText("SD: 80clk ok", 0, 21);
+	}
 
-    /* Montage immédiat (1) pour forcer disk_initialize maintenant */
-    res = f_mount(&FatFs, "", 1);
+	/* Init SD / FatFS */
+	res = f_mount(&FatFs, "", 1);
 
-    if (res == FR_OK) {
-        VDP_drawText("SD: MOUNT OK            ", 0, 22);
-    } else {
-        char errbuf[32];
-        const char *hex = "0123456789ABCDEF";
-        errbuf[0]  = 'S'; errbuf[1]  = 'D';
-        errbuf[2]  = ':'; errbuf[3]  = ' ';
-        errbuf[4]  = 'E'; errbuf[5]  = 'R';
-        errbuf[6]  = 'R'; errbuf[7]  = ' ';
-        errbuf[8]  = '0'; errbuf[9]  = 'x';
-        errbuf[10] = hex[(res >> 4) & 0xF];
-        errbuf[11] = hex[res & 0xF];
-        errbuf[12] = ' ';
-        const char *msg = "UNKNOWN     ";
-        if (res == FR_NOT_READY)     msg = "NOT_READY   ";
-        if (res == FR_NO_FILESYSTEM) msg = "NO_FATFS    ";
-        if (res == FR_DISK_ERR)      msg = "DISK_ERR    ";
-        if (res == FR_INT_ERR)       msg = "INT_ERR     ";
-        for (u8 k = 0; k < 12; k++) errbuf[13 + k] = msg[k];
-        errbuf[25] = 0;
-        VDP_drawText(errbuf, 0, 22);
-    }
-
-    /* État bas niveau — STA_NOINIT=0x01 signifie disk_initialize a échoué */
-    {
-        DSTATUS dstat = disk_status(0);
-        char sbuf[24];
-        const char *hex = "0123456789ABCDEF";
-        sbuf[0] = 'D'; sbuf[1] = 'S'; sbuf[2] = 'K'; sbuf[3] = ':';
-        sbuf[4] = ' '; sbuf[5] = '0'; sbuf[6] = 'x';
-        sbuf[7] = hex[(dstat >> 4) & 0xF];
-        sbuf[8] = hex[dstat & 0xF];
-        sbuf[9] = ' ';
-        const char *dmsg = "OK          ";
-        if (dstat & STA_NOINIT)  dmsg = "NOINIT      ";
-        if (dstat & STA_NODISK)  dmsg = "NODISK      ";
-        if (dstat & STA_PROTECT) dmsg = "PROTECTED   ";
-        for (u8 k = 0; k < 12; k++) sbuf[10 + k] = dmsg[k];
-        sbuf[22] = 0;
-        VDP_drawText(sbuf, 0, 24);
-    }
+	if (res == FR_OK) {
+		VDP_drawText("SD: MOUNT OK !          ", 0, 22);
+	} else {
+		char errbuf[26];
+		const char *hex = "0123456789ABCDEF";
+		errbuf[0]='S'; errbuf[1]='D'; errbuf[2]=':'; errbuf[3]=' ';
+		errbuf[4]='E'; errbuf[5]='R'; errbuf[6]='R'; errbuf[7]=' ';
+		errbuf[8]='0'; errbuf[9]='x';
+		errbuf[10]=hex[(res>>4)&0xF];
+		errbuf[11]=hex[res&0xF];
+		errbuf[12]=' ';
+		const char *msg = "UNKNOWN     ";
+		if (res == FR_NOT_READY)     msg = "NOT_READY   ";
+		if (res == FR_NO_FILESYSTEM) msg = "NO_FATFS    ";
+		if (res == FR_DISK_ERR)      msg = "DISK_ERR    ";
+		if (res == FR_INT_ERR)       msg = "INT_ERR     ";
+		for (u8 k = 0; k < 12; k++) errbuf[13+k] = msg[k];
+		errbuf[25] = 0;
+		VDP_drawText(errbuf, 0, 22);
+	}
 
     /* ------------------------------------------------------------------ */
 
-    SYS_enableInts();
-    SYS_showFrameLoad(TRUE);
+    //SYS_showFrameLoad(TRUE);
 
     while (TRUE)
     {
@@ -123,22 +116,27 @@ int main(bool hardReset)
 
 static void joyEvent(u16 joy, u16 changed, u16 state)
 {
-    if (changed & state & BUTTON_A)  UpdateMenu(PosX, PosY);
+    if (appMode == 1)  /* mode explorateur */
+    {
+        if (changed & state & BUTTON_A)  Explorer_select();
+        if (changed & state & BUTTON_B)  Explorer_goBack();
+        if (changed & state & BUTTON_UP)   Explorer_moveUp();
+        if (changed & state & BUTTON_DOWN) Explorer_moveDown();
+        return;
+    }
 
+    /* mode menu principal */
+    if (changed & state & BUTTON_A)  UpdateMenu(PosX, PosY);
     if (changed & state & BUTTON_B) {
         asm("move.l (4),%a0\n");
         asm("jmp (%a0)\n");
     }
-
     if (changed & state & BUTTON_UP) {
-        PosY -= 2;
-        if (PosY < 8) PosY = 8;
+        PosY -= 2; if (PosY < 8) PosY = 8;
         UpdateCursor(PosX, PosY);
     }
-
     if (changed & state & BUTTON_DOWN) {
-        PosY += 2;
-        if (PosY > 18) PosY = 18;
+        PosY += 2; if (PosY > 18) PosY = 18;
         UpdateCursor(PosX, PosY);
     }
 }
@@ -157,12 +155,30 @@ static void ClearMenu(void)
         VDP_drawText("                                        ", 0, i);
 }
 
+static void ClearMenuFull(void)
+{
+    VDP_drawText("                                        ", 0, 6);
+    for (i = 0; i < 32; i++)
+        VDP_drawText("                                        ", 0, i);
+}
+
 static void UpdateMenu(int PosX, int PosY)
 {
     if (PosX == 10 && PosY == 8)
+	{
         OpenEd_Start_ROM();
+	}
+	
+	if (PosX == 10 && PosY == 10)  // SD Card Explorer
+	{
+		appMode = 1;  /* ← active le mode explorateur */
+		ClearMenuFull();
+		Explorer_loadDir("/");
+		Explorer_draw();
+	}
 
-    if (PosX == 10 && PosY == 14) {
+    if (PosX == 10 && PosY == 14) 
+	{
         ClearMenu();
         VDP_drawText("           SYSTEM INFORMATION           ", 0, 6);
         VDP_setTextPalette(0);
