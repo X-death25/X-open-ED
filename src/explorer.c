@@ -3,11 +3,12 @@
 #include "ff.h"
 
 char currentPath[128];
-ExplorerEntry entries[16];
+ExplorerEntry entries[64];
 u8 entryCount    = 0;
 u8 selectedIndex = 0;
 u8 scrollOffset  = 0;
 RomInfo currentRomInfo;
+static FATFS *fatfs_ptr = NULL;
 
 /* ------------------------------------------------------------------ */
 /* Helpers string                                                       */
@@ -75,32 +76,6 @@ static void fillDummyRomInfo(u8 idx)
         currentRomInfo.romType = ROM_TYPE_DIR;
 }
 
-static void loadDummyRoot(void)
-{
-    strncpy_safe(entries[0].name,  "GAMES",       13); entries[0].type=ENTRY_DIR;  entries[0].size=0;
-    strncpy_safe(entries[1].name,  "SAVES",       13); entries[1].type=ENTRY_DIR;  entries[1].size=0;
-    strncpy_safe(entries[2].name,  "MUSIC",       13); entries[2].type=ENTRY_DIR;  entries[2].size=0;
-    strncpy_safe(entries[3].name,  "SONIC.BIN",   13); entries[3].type=ENTRY_FILE; entries[3].size=524288;
-    strncpy_safe(entries[4].name,  "STREETS.BIN", 13); entries[4].type=ENTRY_FILE; entries[4].size=1048576;
-    strncpy_safe(entries[5].name,  "SHINOBI.BIN", 13); entries[5].type=ENTRY_FILE; entries[5].size=524288;
-    strncpy_safe(entries[6].name,  "CONTRA.BIN",  13); entries[6].type=ENTRY_FILE; entries[6].size=262144;
-    strncpy_safe(entries[7].name,  "THUNDER.BIN", 13); entries[7].type=ENTRY_FILE; entries[7].size=524288;
-    strncpy_safe(entries[8].name,  "CASTLEV.BIN", 13); entries[8].type=ENTRY_FILE; entries[8].size=1048576;
-    strncpy_safe(entries[9].name,  "PHANTASY.BIN",13); entries[9].type=ENTRY_FILE; entries[9].size=524288;
-    strncpy_safe(entries[10].name, "SHINING.BIN", 13); entries[10].type=ENTRY_FILE;entries[10].size=1048576;
-    strncpy_safe(entries[11].name, "CONFIG.INI",  13); entries[11].type=ENTRY_FILE;entries[11].size=128;
-    entryCount = 12;
-}
-
-static void loadDummySubDir(void)
-{
-    strncpy_safe(entries[0].name, "ACTION",     13); entries[0].type=ENTRY_DIR;  entries[0].size=0;
-    strncpy_safe(entries[1].name, "RPG",        13); entries[1].type=ENTRY_DIR;  entries[1].size=0;
-    strncpy_safe(entries[2].name, "ECCO.BIN",   13); entries[2].type=ENTRY_FILE; entries[2].size=524288;
-    strncpy_safe(entries[3].name, "GOLDEN.BIN", 13); entries[3].type=ENTRY_FILE; entries[3].size=1048576;
-    strncpy_safe(entries[4].name, "ALIEN3.BIN", 13); entries[4].type=ENTRY_FILE; entries[4].size=262144;
-    entryCount = 5;
-}
 
 /* ------------------------------------------------------------------ */
 /* Dessin                                                               */
@@ -118,46 +93,58 @@ static void loadDummySubDir(void)
 #define LIST_LINES   18
 #define STATUS_LINE  26
 
-
-static void drawSDInfo(void)
+void Explorer_setFatFs(FATFS *fs)
 {
-    FATFS *fs;
-    DWORD fre_clust;
+    fatfs_ptr = fs;
+}
+
+static void drawSDInfo(FATFS *fs)
+{
     char buf[12];
 
     VDP_drawText("                                        ", 0, INFO_LINE);
 
-    /* Récupère espace libre via FatFs */
-    if (f_getfree("", &fre_clust, &fs) == FR_OK)
-    {
-        /* Calcul espace libre en KB */
-        u32 freeKB  = (fre_clust * fs->csize) / 2;
-        /* Calcul espace total en KB */
-        u32 totalKB = ((fs->n_fatent - 2) * fs->csize) / 2;
-
-        VDP_drawText("Free:", 0, INFO_LINE);
-        VDP_setTextPalette(1);
-        intToStr(freeKB, buf, 1);
+    /* Espace libre */
+    VDP_drawText("Free:", 0, INFO_LINE);
+    VDP_setTextPalette(1);
+    if (fs->free_clst == 0xFFFFFFFF) {
+        VDP_drawText("---", 6, INFO_LINE);
+    } else {
+        u32 freeKB = (fs->free_clst >> 1) * (fs->csize >> 1);
+        u32 freeMB = freeKB / 1024;
+        if (freeMB >= 1024) {
+            intToStr(freeMB / 1024, buf, 1);
+            u8 l = strlen_s(buf);
+            buf[l]='G'; buf[l+1]='B'; buf[l+2]=0;
+        } else {
+            intToStr(freeMB, buf, 1);
+            u8 l = strlen_s(buf);
+            buf[l]='M'; buf[l+1]='B'; buf[l+2]=0;
+        }
         VDP_drawText(buf, 6, INFO_LINE);
-        VDP_drawText("KB", 6 + strlen_s(buf), INFO_LINE);
-        VDP_setTextPalette(0);
+    }
+    VDP_setTextPalette(0);
 
-        VDP_drawText("Tot:", 17, INFO_LINE);
-        VDP_setTextPalette(1);
-        intToStr(totalKB, buf, 1);
-        VDP_drawText(buf, 22, INFO_LINE);
-        VDP_drawText("KB", 22 + strlen_s(buf), INFO_LINE);
-        VDP_setTextPalette(0);
+    /* Taille totale SD */
+    VDP_drawText("SD:", 14, INFO_LINE);
+    VDP_setTextPalette(1);
+    u32 totalMB = ((u32)(fs->n_fatent - 2) / 2) * fs->csize / 1024;
+    if (totalMB >= 1024) {
+        intToStr(totalMB / 1024, buf, 1);
+        u8 l = strlen_s(buf);
+        buf[l]='G'; buf[l+1]='B'; buf[l+2]=0;
+    } else {
+        intToStr(totalMB, buf, 1);
+        u8 l = strlen_s(buf);
+        buf[l]='M'; buf[l+1]='B'; buf[l+2]=0;
     }
-    else
-    {
-        VDP_drawText("Free: ??? Tot: ???", 0, INFO_LINE);
-    }
+    VDP_drawText(buf, 18, INFO_LINE);
+    VDP_setTextPalette(0);
 
     /* Chemin courant */
-    VDP_drawText("Path:", 33, INFO_LINE);
+    VDP_drawText("Path:", 26, INFO_LINE);
     VDP_setTextPalette(1);
-    VDP_drawText(currentPath, 39 - strlen_s(currentPath), INFO_LINE);
+    VDP_drawText(currentPath, 32, INFO_LINE);
     VDP_setTextPalette(0);
 }
 
@@ -330,23 +317,72 @@ static void drawStatusBar(void)
 /* ------------------------------------------------------------------ */
 /* API publique                                                         */
 /* ------------------------------------------------------------------ */
+
 s8 Explorer_loadDir(const char *path)
 {
+    DIR dir;
+    FILINFO fno;
+    u8 dirCount  = 0;
+    u8 fileCount = 0;
+
+    /* Tableaux temporaires pour trier dossiers d'abord */
+    ExplorerEntry tmpDirs[32];
+    ExplorerEntry tmpFiles[32];
+
     entryCount    = 0;
     selectedIndex = 0;
     scrollOffset  = 0;
+
     strncpy_safe(currentPath, path, 128);
 
-    if (strlen_s(path) <= 1) loadDummyRoot();
-    else                     loadDummySubDir();
+    if (f_opendir(&dir, path) != FR_OK) {
+        VDP_drawText("ERR: f_opendir failed   ", 0, 24);
+        return -1;
+    }
 
-    fillDummyRomInfo(0);
+    while ((dirCount + fileCount) < 62)
+    {
+        if (f_readdir(&dir, &fno) != FR_OK) break;
+        if (fno.fname[0] == 0) break;      /* fin de liste */
+        if (fno.fname[0] == '.') continue; /* ignore . et .. */
+
+        if (fno.fattrib & AM_DIR)
+        {
+            if (dirCount < 32) {
+                strncpy_safe(tmpDirs[dirCount].name, fno.fname, EXPLORER_NAME_LEN);
+                tmpDirs[dirCount].type = ENTRY_DIR;
+                tmpDirs[dirCount].size = 0;
+                dirCount++;
+            }
+        }
+        else
+        {
+            if (fileCount < 32) {
+                strncpy_safe(tmpFiles[fileCount].name, fno.fname, EXPLORER_NAME_LEN);
+                tmpFiles[fileCount].type = ENTRY_FILE;
+                tmpFiles[fileCount].size = fno.fsize;
+                fileCount++;
+            }
+        }
+    }
+
+    f_closedir(&dir);
+
+    /* Dossiers en premier, puis fichiers */
+    for (u8 i = 0; i < dirCount; i++)
+        entries[entryCount++] = tmpDirs[i];
+    for (u8 i = 0; i < fileCount; i++)
+        entries[entryCount++] = tmpFiles[i];
+
+    if (entryCount > 0)
+        fillDummyRomInfo(0);  /* sera remplacé par le vrai parser header plus tard */
+
     return entryCount;
 }
 
-void Explorer_draw(void)
+void Explorer_draw(FATFS *fs)
 {
-    drawSDInfo();
+    drawSDInfo(fs);  /* passe fs */
     drawPanelLabels();
     drawSeparator();
     drawFileList();
@@ -360,7 +396,7 @@ void Explorer_moveDown(void)
         selectedIndex++;
         if (selectedIndex >= scrollOffset + LIST_LINES) scrollOffset++;
         fillDummyRomInfo(selectedIndex);
-        Explorer_draw();
+        Explorer_draw(fatfs_ptr); 
     }
 }
 
@@ -370,7 +406,7 @@ void Explorer_moveUp(void)
         selectedIndex--;
         if (selectedIndex < scrollOffset) scrollOffset--;
         fillDummyRomInfo(selectedIndex);
-        Explorer_draw();
+        Explorer_draw(fatfs_ptr);  
     }
 }
 
@@ -386,7 +422,7 @@ u8 Explorer_select(void)
         }
         strncpy_safe(newPath + len, entries[selectedIndex].name, 128 - len);
         Explorer_loadDir(newPath);
-        Explorer_draw();
+        Explorer_draw(fatfs_ptr);
         return 1;
     }
     return 0;
@@ -403,5 +439,5 @@ void Explorer_goBack(void)
     }
     if (lastSlash <= 0) Explorer_loadDir("/");
     else { newPath[lastSlash] = 0; Explorer_loadDir(newPath); }
-    Explorer_draw();
+    Explorer_draw(fatfs_ptr);
 }

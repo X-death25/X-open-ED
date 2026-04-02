@@ -9,7 +9,8 @@
 #define EXPLORER_RIGHT_COL      20  /* colonnes 20-39 */
 #define EXPLORER_VISIBLE_LINES  10
 #define EXPLORER_START_LINE     4
-#define EXPLORER_NAME_LEN       13
+#define EXPLORER_NAME_LEN       13 /* FF_MAX_LFN + 1 */
+#define EXPLORER_MAX_ENTRIES 64
 
 /* Types d'entrée */
 #define ENTRY_DIR   0
@@ -35,18 +36,19 @@ typedef struct {
 } RomInfo;
 
 extern char currentPath[128];
-extern ExplorerEntry entries[16];
+extern ExplorerEntry entries[64];
 extern u8 entryCount;
 extern u8 selectedIndex;
 extern u8 scrollOffset;
 extern RomInfo currentRomInfo;
 
-s8 Explorer_loadDir(const char *path);
-void Explorer_draw(void);
-void Explorer_drawRightPanel(void);
+
+s8  Explorer_loadDir(const char *path);
+void Explorer_setFatFs(FATFS *fs);
+void Explorer_draw(FATFS *fs);
 void Explorer_moveDown(void);
 void Explorer_moveUp(void);
-u8 Explorer_select(void);
+u8   Explorer_select(void);
 void Explorer_goBack(void);
 
 #endif

@@ -26,12 +26,12 @@ static void UpdateCursor(int PosX, int PosY);
 static void ClearMenu(void);
 static void UpdateMenu(int PosX, int PosY);
 
+FATFS FatFs; 
+
 int main(bool hardReset)
 {
     u16 ind, idx1, idx2;
 
-    /* FatFS */
-    FATFS FatFs;
     FIL   Fil;
     UINT  bw;
     FRESULT res;
@@ -101,6 +101,7 @@ int main(bool hardReset)
 		errbuf[25] = 0;
 		VDP_drawText(errbuf, 0, 22);
 	}
+
 
     /* ------------------------------------------------------------------ */
 
@@ -173,8 +174,9 @@ static void UpdateMenu(int PosX, int PosY)
 	{
 		appMode = 1;  /* ← active le mode explorateur */
 		ClearMenuFull();
+		Explorer_setFatFs(&FatFs);  /* ← stocke le pointeur */
 		Explorer_loadDir("/");
-		Explorer_draw();
+		Explorer_draw(&FatFs);  /* passe le FatFs monté */
 	}
 
     if (PosX == 10 && PosY == 14) 

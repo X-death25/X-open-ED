@@ -1,7 +1,6 @@
 /*-----------------------------------------------------------------------*/
 /* Low level disk I/O module skeleton for FatFs (C)ChaN, 2014            */
 /*-----------------------------------------------------------------------*/
-
 #include "OpenEd.h"
 
 #include "ff.h"		/* Obtains integer types for FatFs */
@@ -374,6 +373,8 @@ DRESULT disk_read (
 	UINT count			/* Sector count (1..128) */
 )
 {
+	 /* Ajoute ces deux lignes au début */
+    //VDP_drawText("disk_read called", 0, 25);
 	BYTE cmd;
 	DWORD sect = (DWORD)sector;
 
@@ -382,9 +383,12 @@ DRESULT disk_read (
 	if (!(CardType & CT_BLOCK)) sect *= 512;	/* Convert LBA to byte address if needed */
 
 	cmd = count > 1 ? CMD18 : CMD17;			/*  READ_MULTIPLE_BLOCK : READ_SINGLE_BLOCK */
+	//VDP_drawText("avant send_cmd    ", 0, 25);
 	if (send_cmd(cmd, sect) == 0) {
 		do {
+			//VDP_drawText("avant rcvr_data   ", 0, 25);
 			if (!rcvr_datablock(buff, 512)) break;
+			//VDP_drawText("rcvr_data ok      ", 0, 25);
 			buff += 512;
 		} while (--count);
 		if (cmd == CMD18) send_cmd(CMD12, 0);	/* STOP_TRANSMISSION */
