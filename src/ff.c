@@ -17,9 +17,11 @@
 / by use of this software.
 /
 /----------------------------------------------------------------------------*/
+static int custom_memcmp(const void *ptr1, const void *ptr2, unsigned int num);
+static char *custom_strchr(const char *str, int c);
+#define memcmp  custom_memcmp
+#define strchr  custom_strchr
 
-
-//#include <string.h>
 #include "genesis.h"
 
 #include "ff.h"			/* Declarations of FatFs API */
@@ -606,19 +608,17 @@ static const BYTE DbcTbl[] = MKCVTBL(TBL_DC, FF_CODE_PAGE);
 #endif
 
 
-
-
 /*--------------------------------------------------------------------------
 
    Module Private Functions
 
 ---------------------------------------------------------------------------*/
 
-int custom_memcmp(const void *ptr1, const void *ptr2, size_t num) {
+static int custom_memcmp(const void *ptr1, const void *ptr2, unsigned int num) {
     const unsigned char *p1 = (const unsigned char *)ptr1;
     const unsigned char *p2 = (const unsigned char *)ptr2;
 
-    for (size_t i = 0; i < num; i++) {
+    for (unsigned int i = 0; i < num; i++) {
         if (p1[i] != p2[i]) {
             return (p1[i] > p2[i]) ? 1 : -1;
         }
@@ -627,7 +627,7 @@ int custom_memcmp(const void *ptr1, const void *ptr2, size_t num) {
     return 0; // Les blocs de mémoire sont identiques
 }
 
-char *custom_strchr(const char *str, int c) {
+static char *custom_strchr(const char *str, int c) {
     // Parcourir la chaîne jusqu'à trouver le caractère ou atteindre la fin
     while (*str) {
         if (*str == (char)c) {

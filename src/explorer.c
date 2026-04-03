@@ -9,6 +9,7 @@ u8 selectedIndex = 0;
 u8 scrollOffset  = 0;
 RomInfo currentRomInfo;
 static FATFS *fatfs_ptr = NULL;
+u8 fullscreen = 0;
 
 /* ------------------------------------------------------------------ */
 /* Helpers string                                                       */
@@ -150,13 +151,13 @@ static void drawSDInfo(FATFS *fs)
 
 static void drawPanelLabels(void)
 {
-    /* Ligne 2 — labels panneaux fond vert via palette 3 */
     VDP_setTextPalette(3);
     VDP_drawText(" SD CARD                  ", 0, LABEL_LINE);
-    VDP_drawText(" FILE INFO               ", SEP_COL, LABEL_LINE);
+    if (fullscreen)
+        VDP_drawText(" FILE INFO               ", SEP_COL, LABEL_LINE);
+    else
+        VDP_drawText("              ", SEP_COL, LABEL_LINE);
     VDP_setTextPalette(0);
-
-    /* Ligne 3 — séparateur horizontal */
     VDP_drawText("----------------------------------------", 0, 3);
 }
 
@@ -192,18 +193,20 @@ static void drawFileList(void)
             VDP_drawText(entries[idx].name, 3, line);
             u8 nl = strlen_s(entries[idx].name);
             if (3 + nl < SEP_COL) VDP_drawText("]", 3 + nl, line);
-        } else {
+        } else 
+		{
             if (idx == selectedIndex) VDP_setTextPalette(2);
             else VDP_setTextPalette(0);
             VDP_drawText(entries[idx].name, 2, line);
 
-            /* Taille alignée à droite */
-            char sz[8];
-            sizeToStr(entries[idx].size, sz);
-            u8 slen = strlen_s(sz);
-            if (SEP_COL - slen - 1 > 2)
-                VDP_drawText(sz, SEP_COL - slen - 1, line);
-        }
+			/* Taille alignée selon le mode */
+			char sz[8];
+			sizeToStr(entries[idx].size, sz);
+			u8 slen = strlen_s(sz);
+			u8 sizeCol = fullscreen ? (SEP_COL - slen - 1) : (35 - slen);
+			if (sizeCol > 2)
+				VDP_drawText(sz, sizeCol, line);
+		}
         VDP_setTextPalette(0);
     }
 }
@@ -382,11 +385,22 @@ s8 Explorer_loadDir(const char *path)
 
 void Explorer_draw(FATFS *fs)
 {
-    drawSDInfo(fs);  /* passe fs */
+    drawSDInfo(fs);
     drawPanelLabels();
-    drawSeparator();
+    if (fullscreen) {
+        drawSeparator();
+        drawRightPanel();
+    } else {
+        /* Efface la zone droite et le séparateur */
+        for (u8 y = LABEL_LINE; y <= STATUS_LINE; y++) {
+            VDP_drawText("|", SEP_COL, y);  /* efface séparateur */
+            VDP_drawText("             ", RIGHT_COL, y);  /* efface panneau droit */
+        }
+        /* Efface vraiment le séparateur */
+        for (u8 y = LABEL_LINE; y <= STATUS_LINE; y++)
+            VDP_drawText(" ", SEP_COL, y);
+    }
     drawFileList();
-    drawRightPanel();
     drawStatusBar();
 }
 

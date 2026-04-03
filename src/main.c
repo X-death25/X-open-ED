@@ -121,6 +121,11 @@ static void joyEvent(u16 joy, u16 changed, u16 state)
     {
         if (changed & state & BUTTON_A)  Explorer_select();
         if (changed & state & BUTTON_B)  Explorer_goBack();
+		if (changed & state & BUTTON_C) 
+		{
+			fullscreen = !fullscreen;
+			Explorer_draw(&FatFs);
+		}
         if (changed & state & BUTTON_UP)   Explorer_moveUp();
         if (changed & state & BUTTON_DOWN) Explorer_moveDown();
         return;

@@ -9,7 +9,7 @@
 #define EXPLORER_RIGHT_COL      20  /* colonnes 20-39 */
 #define EXPLORER_VISIBLE_LINES  10
 #define EXPLORER_START_LINE     4
-#define EXPLORER_NAME_LEN       13 /* FF_MAX_LFN + 1 */
+#define EXPLORER_NAME_LEN       33 /* FF_MAX_LFN + 1 */
 #define EXPLORER_MAX_ENTRIES 64
 
 /* Types d'entrée */
@@ -41,7 +41,7 @@ extern u8 entryCount;
 extern u8 selectedIndex;
 extern u8 scrollOffset;
 extern RomInfo currentRomInfo;
-
+extern u8 fullscreen;
 
 s8  Explorer_loadDir(const char *path);
 void Explorer_setFatFs(FATFS *fs);
