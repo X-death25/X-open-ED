@@ -1,5 +1,6 @@
 #include "genesis.h"
 #include "OpenEd.h"
+#include "ff.h"
 
 #define RAM_SECT __attribute__((section(".ramprog")))
 #define NO_INL   __attribute__((noinline))
@@ -328,4 +329,83 @@ RAM_SECT NO_INL u8 OpenEd_Flash_TestWrite(u32 addr)
 
     asm("move.w #0x2300, %sr");
     return ok;
+}
+RAM_SECT NO_INL u8 ROM_flashFromSD(const char *path, u32 romSize)
+{
+    FIL fil;
+    UINT br;
+    static BYTE buf[512];
+    u32 numSectors = (romSize + 0xFFFF) / 0x10000;
+    u32 flashAddr  = 0x000000;
+    u32 bytesLeft  = romSize;
+
+    /* Affichage initial */
+    VDP_drawText("Flashing: [                    ]", 0, 27);
+
+    if (f_open(&fil, path, FA_READ) != FR_OK) {
+        VDP_drawText("Flashing: ERR OPEN            ", 0, 27);
+        return 0;
+    }
+
+    for (u32 s = 0; s < numSectors; s++)
+    {
+        /* Barre de progression — interruptions encore actives */
+        u8 filled = (u8)((s * 20) / numSectors);
+        char bar[24];
+        bar[0]='[';
+        for (u8 i = 0; i < 20; i++)
+            bar[i+1] = (i < filled) ? '#' : ' ';
+        bar[21]=']'; bar[22]=0;
+        VDP_drawText(bar, 10, 27);
+
+        /* Erase secteur — Bank0, ints coupées */
+        asm("move.w #0x2700, %sr");
+        ed_cfg &= ~CTRL_ROM_BANK;
+        *((vu16 *) 0xA130E0) = ed_cfg;
+
+        OpenEd_Flash_Erase64K(flashAddr, 1);
+        *(vu8*)(0x1) = 0xF0;
+        volatile u16 dummy = *(vu16*)flashAddr; (void)dummy;
+
+        /* Retour Bank1 après erase */
+        ed_cfg |= CTRL_ROM_BANK;
+        *((vu16 *) 0xA130E0) = ed_cfg;
+        asm("move.w #0x2300, %sr");
+
+        /* Ecrit le secteur par chunks de 512 */
+        u32 sectorBytes = (bytesLeft > 0x10000) ? 0x10000 : bytesLeft;
+        u16 *dst = (u16*)flashAddr;
+        u32 written = 0;
+
+        while (written < sectorBytes)
+        {
+            UINT toRead = ((sectorBytes - written) > 512) ? 512 : (sectorBytes - written);
+
+            /* Lecture SD — Bank1, interruptions ON */
+            if (f_read(&fil, buf, toRead, &br) != FR_OK || br == 0) goto flash_done;
+
+            /* Ecriture flash — Bank0, ints coupées */
+            asm("move.w #0x2700, %sr");
+            ed_cfg &= ~CTRL_ROM_BANK;
+            *((vu16 *) 0xA130E0) = ed_cfg;
+
+            OpenEd_Flash_Write((u16*)buf, dst, br);
+
+            /* Retour Bank1 */
+            ed_cfg |= CTRL_ROM_BANK;
+            *((vu16 *) 0xA130E0) = ed_cfg;
+            asm("move.w #0x2300, %sr");
+
+            dst     += br / 2;
+            written += br;
+        }
+
+        flashAddr += 0x10000;
+        bytesLeft -= sectorBytes;
+    }
+
+flash_done:
+    f_close(&fil);
+    VDP_drawText("Flashing: [####################]", 0, 27);
+    return 1;
 }

@@ -1,6 +1,7 @@
 #include "genesis.h"
 #include "explorer.h"
 #include "ff.h"
+#include "OpenEd.h"
 #include "rom_parser.h"
 
 char currentPath[128];
@@ -310,13 +311,6 @@ s8 Explorer_loadDir(const char *path)
     for (u8 i = 0; i < fileCount; i++)
         entries[entryCount++] = tmpFiles[i];
 
-    if (entryCount > 0)
-        /* Dossiers en premier, puis fichiers */
-    for (u8 i = 0; i < dirCount; i++)
-        entries[entryCount++] = tmpDirs[i];
-    for (u8 i = 0; i < fileCount; i++)
-        entries[entryCount++] = tmpFiles[i];
-
     /* Parse le premier fichier de la liste */
     if (entryCount > 0) {
         /* Cherche le premier fichier (pas un dossier) */
@@ -418,6 +412,7 @@ void Explorer_moveUp(void)
 u8 Explorer_select(void)
 {
     if (entryCount == 0) return 0;
+
     if (entries[selectedIndex].type == ENTRY_DIR) {
         char newPath[128];
         u8 len = strlen_s(currentPath);
@@ -430,6 +425,20 @@ u8 Explorer_select(void)
         Explorer_draw(fatfs_ptr);
         return 1;
     }
+
+    /* Fichier — flash ! */
+    if (entries[selectedIndex].type == ENTRY_FILE) {
+        char fullPath[128];
+        u8 len = strlen_s(currentPath);
+        strncpy_safe(fullPath, currentPath, 128);
+        if (len > 0 && currentPath[len-1] != '/') {
+            fullPath[len]='/'; fullPath[len+1]=0; len++;
+        }
+        strncpy_safe(fullPath + len, entries[selectedIndex].name, 128 - len);
+        ROM_flashFromSD(fullPath, entries[selectedIndex].size);
+        return 1;
+    }
+
     return 0;
 }
 

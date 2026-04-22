@@ -6,6 +6,13 @@
  *
  * Please visit https://github.com/krikzz/open-ed for more info
  */
+ 
+#ifndef RAM_SECT
+#define RAM_SECT __attribute__((section(".ramprog")))
+#endif
+#ifndef NO_INL
+#define NO_INL   __attribute__((noinline))
+#endif
 
 #ifndef OPENED_H
 #define OPENED_H
@@ -155,5 +162,16 @@ u8 OpenEd_Flash_TestErase(u32 addr);
  *  \return 1 if OK, 0 if FAIL
  */
 u8 OpenEd_Flash_TestWrite(u32 addr);
+
+/**
+ *  \brief Flash a ROM file from SD card to flash memory
+ *         Erases required 64KB sectors then writes file chunk by chunk
+ *         Displays a progress bar on screen during operation
+ *  \param path     Full path to the ROM file on SD card
+ *  \param romSize  Size of the ROM in bytes (from FAT filesystem)
+ *  \return 1 if OK, 0 if FAIL (file open error)
+ */
+ 
+RAM_SECT NO_INL u8 ROM_flashFromSD(const char *path, u32 romSize);
 
 #endif /* OPENED_H */
