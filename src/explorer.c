@@ -1,13 +1,13 @@
 #include "genesis.h"
 #include "explorer.h"
 #include "ff.h"
+#include "rom_parser.h"
 
 char currentPath[128];
 ExplorerEntry entries[64];
 u8 entryCount    = 0;
 u8 selectedIndex = 0;
 u8 scrollOffset  = 0;
-RomInfo currentRomInfo;
 static FATFS *fatfs_ptr = NULL;
 u8 fullscreen = 0;
 
@@ -45,38 +45,6 @@ static void sizeToStr(u32 size, char *out)
         out[l]='B'; out[l+1]=0;
     }
 }
-
-static u8 getFileType(const char *name)
-{
-    u8 len = strlen_s(name);
-    if (len < 4) return ROM_TYPE_UNKNOWN;
-    const char *ext = name + len - 3;
-    if ((ext[0]=='B'||ext[0]=='b') &&
-        (ext[1]=='I'||ext[1]=='i') &&
-        (ext[2]=='N'||ext[2]=='n')) return ROM_TYPE_MD;
-    if ((ext[0]=='M'||ext[0]=='m') &&
-        (ext[1]=='D'||ext[1]=='d')) return ROM_TYPE_MD;
-    if ((ext[0]=='I'||ext[0]=='i') &&
-        (ext[1]=='N'||ext[1]=='n') &&
-        (ext[2]=='I'||ext[2]=='i')) return ROM_TYPE_CFG;
-    return ROM_TYPE_UNKNOWN;
-}
-
-/* ------------------------------------------------------------------ */
-/* Données dummy                                                        */
-/* ------------------------------------------------------------------ */
-static void fillDummyRomInfo(u8 idx)
-{
-    currentRomInfo.romType = getFileType(entries[idx].name);
-    currentRomInfo.hasSram = (idx % 3 == 0) ? 1 : 0;
-    currentRomInfo.sramSize = currentRomInfo.hasSram ? 65536 : 0;
-    if (idx % 3 == 0)      strncpy_safe(currentRomInfo.region, "JPN", 4);
-    else if (idx % 3 == 1) strncpy_safe(currentRomInfo.region, "EUR", 4);
-    else                   strncpy_safe(currentRomInfo.region, "USA", 4);
-    if (entries[idx].type == ENTRY_DIR)
-        currentRomInfo.romType = ROM_TYPE_DIR;
-}
-
 
 /* ------------------------------------------------------------------ */
 /* Dessin                                                               */
@@ -181,110 +149,75 @@ static void drawFileList(void)
 
         /* Curseur + surlignage sélection */
         if (idx == selectedIndex) {
-            VDP_setTextPalette(2);
+            VDP_setTextPalette(3);
             VDP_drawText("                          ", 0, line);
             VDP_drawText(">", 0, line);
         }
 
-        /* Icone + nom */
+        /* Longueur max selon le mode */
+        u8 maxLen = fullscreen ? 20 : 32;
+
         if (entries[idx].type == ENTRY_DIR) {
+            /* Dossier — tronque entre [ ] */
+            char truncName[36];
+            u8 nameLen = strlen_s(entries[idx].name);
+            if (nameLen <= maxLen - 2)
+                strncpy_safe(truncName, entries[idx].name, 36);
+            else
+                strncpy_safe(truncName, entries[idx].name, maxLen - 1);
+
             VDP_setTextPalette(1);
             VDP_drawText("[", 2, line);
-            VDP_drawText(entries[idx].name, 3, line);
-            u8 nl = strlen_s(entries[idx].name);
-            if (3 + nl < SEP_COL) VDP_drawText("]", 3 + nl, line);
-        } else 
-		{
-            if (idx == selectedIndex) VDP_setTextPalette(2);
-            else VDP_setTextPalette(0);
-            VDP_drawText(entries[idx].name, 2, line);
+            VDP_drawText(truncName, 3, line);
+            u8 nl = strlen_s(truncName);
+            u8 closeBracketCol = fullscreen ? SEP_COL : 38;
+            if (3 + nl < closeBracketCol)
+                VDP_drawText("]", 3 + nl, line);
+            VDP_setTextPalette(0);
 
-			/* Taille alignée selon le mode */
-			char sz[8];
-			sizeToStr(entries[idx].size, sz);
-			u8 slen = strlen_s(sz);
-			u8 sizeCol = fullscreen ? (SEP_COL - slen - 1) : (35 - slen);
-			if (sizeCol > 2)
-				VDP_drawText(sz, sizeCol, line);
-		}
+        } else {
+            /* Fichier — troncature intelligente avec extension */
+            char truncName[36];
+            u8 nameLen = strlen_s(entries[idx].name);
+
+            if (nameLen <= maxLen) {
+                strncpy_safe(truncName, entries[idx].name, 36);
+            } else {
+                /* Trouve l'extension (dernier '.') */
+                s8 dotPos = -1;
+                for (s8 j = (s8)nameLen - 1; j >= 0; j--) {
+                    if (entries[idx].name[j] == '.') { dotPos = j; break; }
+                }
+                if (dotPos > 0) {
+                    u8 extLen = nameLen - dotPos;
+                    strncpy_safe(truncName, entries[idx].name, maxLen - extLen + 1);
+                    u8 tl = strlen_s(truncName);
+                    strncpy_safe(truncName + tl, entries[idx].name + dotPos, extLen + 1);
+                } else {
+                    strncpy_safe(truncName, entries[idx].name, maxLen + 1);
+                }
+            }
+
+            if (idx == selectedIndex) VDP_setTextPalette(3);
+            else VDP_setTextPalette(0);
+            VDP_drawText(truncName, 2, line);
+
+            /* Taille alignée à droite */
+            char sz[8];
+            sizeToStr(entries[idx].size, sz);
+            u8 slen = strlen_s(sz);
+            u8 sizeCol = fullscreen ? (SEP_COL - slen - 1) : (35 - slen);
+            if (sizeCol > 2)
+                VDP_drawText(sz, sizeCol, line);
+        }
+
         VDP_setTextPalette(0);
     }
 }
 
 static void drawRightPanel(void)
 {
-    char buf[16];
-
-    if (entryCount == 0) return;
-
-    ExplorerEntry *e = &entries[selectedIndex];
-
-    /* Efface le panneau droit */
-    for (u8 y = LIST_START; y < STATUS_LINE; y++)
-        VDP_drawText("             ", RIGHT_COL, y);
-
-    if (currentRomInfo.romType == ROM_TYPE_MD)
-    {
-        /* Titre */
-        VDP_setTextPalette(1);
-        VDP_drawText("ROM HEADER", RIGHT_COL, LIST_START);
-        VDP_setTextPalette(0);
-
-        /* Type */
-        VDP_drawText("Type:", RIGHT_COL, LIST_START + 2);
-        VDP_setTextPalette(1);
-        VDP_drawText("MD ROM", RIGHT_COL + 5, LIST_START + 2);
-        VDP_setTextPalette(0);
-
-        /* Taille */
-        VDP_drawText("Size:", RIGHT_COL, LIST_START + 3);
-        sizeToStr(e->size, buf);
-        VDP_setTextPalette(1);
-        VDP_drawText(buf, RIGHT_COL + 5, LIST_START + 3);
-        VDP_setTextPalette(0);
-
-        /* Région */
-        VDP_drawText("Reg: ", RIGHT_COL, LIST_START + 5);
-        VDP_setTextPalette(1);
-        VDP_drawText(currentRomInfo.region, RIGHT_COL + 5, LIST_START + 5);
-        VDP_setTextPalette(0);
-
-        /* SRAM */
-        VDP_drawText("Save:", RIGHT_COL, LIST_START + 6);
-        VDP_setTextPalette(currentRomInfo.hasSram ? 1 : 0);
-        VDP_drawText(currentRomInfo.hasSram ? "YES" : "NO", RIGHT_COL + 5, LIST_START + 6);
-        VDP_setTextPalette(0);
-
-        if (currentRomInfo.hasSram) {
-            sizeToStr(currentRomInfo.sramSize, buf);
-            VDP_drawText("SRAM:", RIGHT_COL, LIST_START + 7);
-            VDP_setTextPalette(1);
-            VDP_drawText(buf, RIGHT_COL + 5, LIST_START + 7);
-            VDP_setTextPalette(0);
-        }
-    }
-    else if (e->type == ENTRY_DIR)
-    {
-        VDP_setTextPalette(1);
-        VDP_drawText("FOLDER", RIGHT_COL, LIST_START + 2);
-        VDP_setTextPalette(0);
-        VDP_drawText("Press A", RIGHT_COL, LIST_START + 4);
-        VDP_drawText("to open", RIGHT_COL, LIST_START + 5);
-    }
-    else
-    {
-        VDP_setTextPalette(0);
-        VDP_drawText("Type:", RIGHT_COL, LIST_START + 2);
-        VDP_setTextPalette(1);
-        const char *t = currentRomInfo.romType == ROM_TYPE_CFG ? "CONFIG" : "FILE";
-        VDP_drawText(t, RIGHT_COL + 5, LIST_START + 2);
-        VDP_setTextPalette(0);
-        VDP_drawText("Size:", RIGHT_COL, LIST_START + 3);
-        sizeToStr(e->size, buf);
-        VDP_setTextPalette(1);
-        VDP_drawText(buf, RIGHT_COL + 5, LIST_START + 3);
-        VDP_setTextPalette(0);
-    }
+    ROM_drawInfo();
 }
 
 static void drawStatusBar(void)
@@ -378,7 +311,38 @@ s8 Explorer_loadDir(const char *path)
         entries[entryCount++] = tmpFiles[i];
 
     if (entryCount > 0)
-        fillDummyRomInfo(0);  /* sera remplacé par le vrai parser header plus tard */
+        /* Dossiers en premier, puis fichiers */
+    for (u8 i = 0; i < dirCount; i++)
+        entries[entryCount++] = tmpDirs[i];
+    for (u8 i = 0; i < fileCount; i++)
+        entries[entryCount++] = tmpFiles[i];
+
+    /* Parse le premier fichier de la liste */
+    if (entryCount > 0) {
+        /* Cherche le premier fichier (pas un dossier) */
+        u8 firstFile = 0;
+        for (u8 i = 0; i < entryCount; i++) {
+            if (entries[i].type == ENTRY_FILE) {
+                firstFile = i;
+                break;
+            }
+        }
+        selectedIndex = firstFile;
+
+        if (entries[firstFile].type == ENTRY_FILE) {
+            char fullPath[128];
+            u8 len = strlen_s(currentPath);
+            strncpy_safe(fullPath, currentPath, 128);
+            if (len > 0 && currentPath[len-1] != '/') {
+                fullPath[len]='/'; fullPath[len+1]=0; len++;
+            }
+            strncpy_safe(fullPath + len, entries[firstFile].name, 128 - len);
+            if (fullscreen && entries[selectedIndex].type == ENTRY_FILE) 
+			{
+				ROM_parseHeader(fullPath);
+			}
+        }
+    }
 
     return entryCount;
 }
@@ -409,8 +373,22 @@ void Explorer_moveDown(void)
     if (selectedIndex < entryCount - 1) {
         selectedIndex++;
         if (selectedIndex >= scrollOffset + LIST_LINES) scrollOffset++;
-        fillDummyRomInfo(selectedIndex);
-        Explorer_draw(fatfs_ptr); 
+        
+        if (entries[selectedIndex].type == ENTRY_FILE) {
+            char fullPath[128];
+            u8 len = strlen_s(currentPath);
+            strncpy_safe(fullPath, currentPath, 128);
+            if (len > 0 && currentPath[len-1] != '/') {
+                fullPath[len]='/'; fullPath[len+1]=0; len++;
+            }
+            strncpy_safe(fullPath + len, entries[selectedIndex].name, 128 - len);
+            if (fullscreen && entries[selectedIndex].type == ENTRY_FILE) 
+			{
+				ROM_parseHeader(fullPath);
+			}
+        }
+        
+        Explorer_draw(fatfs_ptr);
     }
 }
 
@@ -419,7 +397,20 @@ void Explorer_moveUp(void)
     if (selectedIndex > 0) {
         selectedIndex--;
         if (selectedIndex < scrollOffset) scrollOffset--;
-        fillDummyRomInfo(selectedIndex);
+
+        if (entries[selectedIndex].type == ENTRY_FILE) {
+            char fullPath[128];
+            u8 len = strlen_s(currentPath);
+            strncpy_safe(fullPath, currentPath, 128);
+            if (len > 0 && currentPath[len-1] != '/') {
+                fullPath[len]='/'; fullPath[len+1]=0; len++;
+            }
+            strncpy_safe(fullPath + len, entries[selectedIndex].name, 128 - len);
+            if (fullscreen && entries[selectedIndex].type == ENTRY_FILE) 
+			{
+				ROM_parseHeader(fullPath);
+			}
+        }  
         Explorer_draw(fatfs_ptr);  
     }
 }

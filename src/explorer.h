@@ -28,19 +28,11 @@ typedef struct {
     u32  size;
 } ExplorerEntry;
 
-typedef struct {
-    char region[4];     /* "JPN", "EUR", "USA", "???" */
-    u8   hasSram;       /* 0 = NO, 1 = YES */
-    u32  sramSize;      /* taille SRAM en octets */
-    u8   romType;       /* ROM_TYPE_xxx */
-} RomInfo;
-
 extern char currentPath[128];
 extern ExplorerEntry entries[64];
 extern u8 entryCount;
 extern u8 selectedIndex;
 extern u8 scrollOffset;
-extern RomInfo currentRomInfo;
 extern u8 fullscreen;
 
 s8  Explorer_loadDir(const char *path);
