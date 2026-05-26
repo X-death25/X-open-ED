@@ -15,8 +15,9 @@ static u8 flash_type = FLASH_TYPE_UNK;
     asm("move.w #0x2300, %sr");
 
 /* ------------------------------------------------------------------ */
-/* Prototypes internes flash                                            */
+/* Prototypes internes flash                                          */
 /* ------------------------------------------------------------------ */
+
 static u8   flashInit_ram(void);
 static void flashWrite_ram(u16 *src, u16 *dst, u32 len);
 static u8   flashInit_m29(void);
@@ -24,6 +25,8 @@ static void flashWordProgram(u32 addr, u16 value);
 static void flashWrite_m29(u16 *src, u16 *dst, u32 len);
 static void flashErase_m29(u32 addr);
 static void flashUnlock(void);
+static void flashUnlockBypassEnter(void);  /* Unlock Bypass mode entry */
+static void flashUnlockBypassExit(void);   /* Unlock Bypass mode exit  */
 static void flashReset(void);
 
 /* ------------------------------------------------------------------ */
@@ -144,7 +147,7 @@ unsigned char OpenEd_SPI_Read_Write(unsigned char val)
 }
 
 /* ------------------------------------------------------------------ */
-/* Flash — fonctions internes bas niveau style SGDK                     */
+/* Flash — fonctions internes bas niveau                              */
 /* ------------------------------------------------------------------ */
 
 /* Unlock séquence AMD/M29 */
