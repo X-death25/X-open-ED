@@ -1,6 +1,7 @@
 #include "genesis.h"
 #include "OpenEd.h"
 #include "ff.h"
+#include "config.h"
 
 #define RAM_SECT __attribute__((section(".ramprog")))
 #define NO_INL   __attribute__((noinline))

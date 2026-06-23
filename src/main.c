@@ -1,7 +1,6 @@
 #include "genesis.h"
 #include "explorer.h"
 #include "rom_parser.h"
-#include "music_player.h"
 
 #define logo_lib sgdk_logo
 #define font_lib font_default
@@ -62,14 +61,11 @@ int main(bool hardReset)
     VDP_drawText("SD Card Explorer", 12, 10);
     VDP_drawText("SRAM Manager",     12, 12);
     VDP_drawText("Hardware Info",    12, 14);
-    VDP_drawText("Flash Erase Test", 12, 16);
+    VDP_drawText("Options", 12, 16);
     VDP_drawText("Flash Write Test", 12, 18);
 
     PosX = 10;
     PosY = 8;
-
-    Z80_loadDriver(Z80_DRIVER_XGM, TRUE);
-    XGM_setLoopNumber(-1);
 
     SYS_enableInts();
     VDP_drawText("Avant mount...", 0, 20);
@@ -98,7 +94,7 @@ int main(bool hardReset)
 
     if (res == FR_OK) {
         VDP_drawText("SD: MOUNT OK !          ", 0, 22);
-        MUSIC_init();
+		Config_Init();
     } else {
         char errbuf[26];
         const char *hex = "0123456789ABCDEF";
@@ -117,6 +113,7 @@ int main(bool hardReset)
         errbuf[25] = 0;
         VDP_drawText(errbuf, 0, 22);
     }
+	
 
     while (TRUE)
     {
@@ -136,8 +133,6 @@ int main(bool hardReset)
 
 static void joyEvent(u16 joy, u16 changed, u16 state)
 {
-    if (changed & state & BUTTON_Y) MUSIC_togglePause();
-    if (changed & state & BUTTON_Z) MUSIC_stop();
 
     if (appMode == 1)
     {
@@ -245,8 +240,8 @@ static void UpdateMenu(int PosX, int PosY)
         VDP_drawText((Region & 0x10) ? "YES" : "NO", 16, 19);
     }
 
-    /* Flash Erase Test */
-    if (PosX == 10 && PosY == 16)
+    /* Options */
+    if (PosX == 10 && PosY == 16) // Options
     {
         VDP_drawText("Erasing 0x080000...     ", 0, 24);
         u8 r = OpenEd_Flash_TestErase(0x080000);

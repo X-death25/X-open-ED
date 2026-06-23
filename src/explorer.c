@@ -3,6 +3,7 @@
 #include "ff.h"
 #include "OpenEd.h"
 #include "rom_parser.h"
+#include "config.h"  
 
 char currentPath[128];
 ExplorerEntry entries[64];
@@ -436,6 +437,11 @@ u8 Explorer_select(void)
         }
         strncpy_safe(fullPath + len, entries[selectedIndex].name, 128 - len);
         ROM_flashFromSD(fullPath, entries[selectedIndex].size);
+		/* Auto-start si configuré */
+		if (g_config.auto_start_rom) {
+			waitMs(500);
+			OpenEd_Start_ROM();
+		}
         return 1;
     }
 
