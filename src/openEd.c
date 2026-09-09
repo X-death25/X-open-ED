@@ -8,6 +8,7 @@
 
 unsigned short ed_cfg;
 static u8 flash_type = FLASH_TYPE_UNK;
+static u8 game_type  = GAME_TYPE_NONE;
 
 /* Macro protection interruptions */
 #define CTRL_WRITE(val) \
@@ -72,6 +73,328 @@ RAM_SECT NO_INL void OpenEd_Start_ROM(void)
     asm("move.l 0, %sp");
     asm("move.l 4, %a0");
     asm("jmp (%a0)");
+}
+
+/* ------------------------------------------------------------------ */
+/* SRAM control                                                         */
+/* ------------------------------------------------------------------ */
+
+void OpenEd_SRAM_Enable(void)
+{
+    ed_cfg |= CTRL_SRM_ON;
+    CTRL_WRITE(ed_cfg)
+}
+
+void OpenEd_SRAM_Disable(void)
+{
+    ed_cfg &= ~CTRL_SRM_ON;
+    CTRL_WRITE(ed_cfg)
+}
+
+u8 OpenEd_SRAM_IsEnabled(void)
+{
+    return (ed_cfg & CTRL_SRM_ON) ? 1 : 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* SRAM                                                                  */
+/* ------------------------------------------------------------------ */
+
+RAM_SECT NO_INL static u16 read_header_bank0(u32 addr)
+{
+    u16 saved = ed_cfg;
+    u16 result;
+
+    /* Passage en Bank0 */
+    ed_cfg &= ~CTRL_ROM_BANK;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    /* Lecture atomique de 2 octets */
+    result = *(vu16*)addr;
+
+    /* Restauration du bank d'origine */
+    ed_cfg = saved;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    return result;
+}
+
+RAM_SECT NO_INL void OpenEd_SRAM_ReadBlock(u8 *dst, u32 offset, u32 len)
+{
+    u16 saved = ed_cfg;
+
+    asm("move.w #0x2700, %sr");
+    ed_cfg &= ~CTRL_ROM_BANK;
+    ed_cfg |= CTRL_SRM_ON;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    vu16 *src = (vu16 *)(SRAM_BASE + (offset * 2));
+    while (len--) {
+        u16 word = *src++;
+        *dst++ = (u8)((word >> 8) & 0xFF);   /* octet HAUT, pas bas */
+    }
+
+    ed_cfg = saved;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+    asm("move.w #0x2300, %sr");
+}
+
+void OpenEd_SRAM_WriteBlock(const u8 *src, u32 offset, u32 len)
+{
+    vu8 *dst = (vu8 *)(SRAM_BASE + (offset * 2) + 1);
+
+    asm("move.w #0x2700, %sr");
+
+    ed_cfg |= CTRL_SRM_ON;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    while (len--) {
+        *dst = *src++;
+        dst += 2;
+    }
+
+    ed_cfg &= ~CTRL_SRM_ON;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    asm("move.w #0x2300, %sr");
+}
+
+RAM_SECT NO_INL u8 SRAM_DumpToSD(const char *path, u32 realDataSize)
+{
+    FIL fil;
+    UINT bw;
+    static u8 chunk[256];
+    u32 offset = 0;
+    u16 saved = ed_cfg;
+
+    if (f_open(&fil, path, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) return 0;
+
+    while (offset < realDataSize) {
+        u16 n = (realDataSize - offset > 256) ? 256 : (realDataSize - offset);
+
+        asm("move.w #0x2700, %sr");
+        ed_cfg &= ~CTRL_ROM_BANK;
+        ed_cfg |= CTRL_SRM_ON;
+        *((vu16 *) 0xA130E0) = ed_cfg;
+
+        vu8 *src = (vu8 *)(SRAM_BASE + (offset * 2));
+        for (u16 i = 0; i < n; i++) {
+            chunk[i] = *src;
+            src += 2;
+        }
+
+        ed_cfg = saved;
+        *((vu16 *) 0xA130E0) = ed_cfg;
+        asm("move.w #0x2300, %sr");
+
+        f_write(&fil, chunk, n, &bw);
+        offset += n;
+    }
+
+    f_close(&fil);
+    return 1;
+}
+
+RAM_SECT NO_INL u8 SRAM_DumpToSD_Emu(const char *path, u32 realDataSize)
+{
+    FIL fil;
+    UINT bw;
+    static u8 chunk[512];
+    u32 offset = 0;
+    u16 saved = ed_cfg;
+
+    if (f_open(&fil, path, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) return 0;
+
+    while (offset < realDataSize) {
+        u16 n = (realDataSize - offset > 256) ? 256 : (realDataSize - offset);
+
+        asm("move.w #0x2700, %sr");
+        ed_cfg &= ~CTRL_ROM_BANK;
+        ed_cfg |= CTRL_SRM_ON;
+        *((vu16 *) 0xA130E0) = ed_cfg;
+
+        vu8 *src = (vu8 *)(SRAM_BASE + (offset * 2));
+        for (u16 i = 0; i < n; i++) {
+            chunk[i*2]     = 0x00;   /* padding EN PREMIER */
+            chunk[i*2 + 1] = *src;   /* donnée réelle ENSUITE */
+            src += 2;
+        }
+
+        ed_cfg = saved;
+        *((vu16 *) 0xA130E0) = ed_cfg;
+        asm("move.w #0x2300, %sr");
+
+        f_write(&fil, chunk, n * 2, &bw);
+        offset += n;
+    }
+
+    f_close(&fil);
+    return 1;
+}
+
+
+u8 SRAM_RestoreFromSD(const char *path, u32 realDataSize)
+{
+    FIL fil;
+    UINT br;
+    static u8 chunk[512];
+    u32 offset = 0;
+
+    if (f_open(&fil, path, FA_READ) != FR_OK) return 0;
+
+    while (offset < realDataSize) {
+        u16 n = (realDataSize - offset > 512) ? 512 : (realDataSize - offset);
+
+        if (f_read(&fil, chunk, n, &br) != FR_OK || br < n) {
+            f_close(&fil);
+            return 0;
+        }
+
+        OpenEd_SRAM_WriteBlock(chunk, offset, n);
+        offset += n;
+    }
+
+    f_close(&fil);
+    return 1;
+}
+
+
+void OpenEd_Game_Init(void)
+{
+    /* Lit les 2 premiers octets du marqueur SRAM depuis Bank0 */
+    u16 hdr = read_header_bank0(0x1B0);
+    u8 b0 = (hdr >> 8) & 0xFF;
+    u8 b1 = hdr & 0xFF;
+
+    /* Détecte le type de jeu */
+    if (b0 == 0xFF && b1 == 0xFF) {
+        game_type = GAME_TYPE_NONE;
+    } else if (b0 == 'R' && b1 == 'A') {
+        game_type = GAME_TYPE_SRAM;
+    } else {
+        game_type = GAME_TYPE_ROM;
+    }
+
+    /* Configure la SRAM en conséquence */
+    if (game_type == GAME_TYPE_SRAM) {
+        OpenEd_SRAM_Enable();
+    } else {
+        OpenEd_SRAM_Disable();
+    }
+}
+
+u8 OpenEd_Game_Type(void)
+{
+    return game_type;
+}
+
+/* ------------------------------------------------------------------ */
+/* SRAM — test isolé (1 octet, écriture puis lecture immédiate)        */
+/* ------------------------------------------------------------------ */
+
+void OpenEd_SRAM_SingleTest(void)
+{
+    u8 testVal = 0x11;
+    u8 readVal = 0;
+	
+	    ed_cfg |= CTRL_SRM_ON;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    u16 ctrlCheck = *((vu16 *) 0xA130E0);
+
+    char cbuf[8];
+    intToStr(ctrlCheck, cbuf, 1);
+    VDP_drawText("CTRL after write: ", 0, 24);
+    VDP_drawText(cbuf, 19, 24);
+
+    ed_cfg &= ~CTRL_SRM_ON;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    asm("move.w #0x2700, %sr");
+
+    ed_cfg |= CTRL_SRM_ON;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    *(vu8*)(SRAM_BASE + 1) = testVal;
+    readVal = *(vu8*)(SRAM_BASE + 1);
+
+    ed_cfg &= ~CTRL_SRM_ON;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    asm("move.w #0x2300, %sr");
+
+    char buf[8];
+    intToStr(readVal, buf, 1);
+    VDP_drawText("SRAM test: ", 0, 25);
+    VDP_drawText(buf, 12, 25);
+}
+
+RAM_SECT NO_INL u8 SRAM_DumpWide(const char *path, u32 startAddr, u32 len)
+{
+    FIL fil;
+    UINT bw;
+    static u16 chunk[256];   /* 512 octets par chunk, en mots */
+    u32 offset = 0;
+    u16 saved = ed_cfg;
+
+    VDP_drawText("Dump wide: starting...   ", 0, 26);
+
+    if (f_open(&fil, path, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
+        VDP_drawText("Dump wide: OPEN FAIL     ", 0, 26);
+        return 0;
+    }
+
+    while (offset < len) {
+        u16 n = (len - offset > 512) ? 256 : (len - offset) / 2;
+
+        asm("move.w #0x2700, %sr");
+        ed_cfg &= ~CTRL_ROM_BANK;   /* bascule sur bank GAME */
+        ed_cfg |= CTRL_SRM_ON;
+        *((vu16 *) 0xA130E0) = ed_cfg;
+
+        vu16 *src = (vu16 *)(startAddr + offset);
+        for (u16 i = 0; i < n; i++) {
+            chunk[i] = *src++;
+        }
+
+        ed_cfg = saved;   /* restaure bank BIOS + SRAM off */
+        *((vu16 *) 0xA130E0) = ed_cfg;
+        asm("move.w #0x2300, %sr");
+
+        f_write(&fil, chunk, n * 2, &bw);
+        offset += n * 2;
+
+        if ((offset & 0xFFFF) == 0) {
+            char buf[12];
+            intToStr(offset, buf, 1);
+            VDP_drawText("Dump wide: progress:      ", 0, 26);
+            VDP_drawText(buf, 20, 26);
+        }
+    }
+
+    f_close(&fil);
+    VDP_drawText("Dump wide: DONE!          ", 0, 26);
+    return 1;
+}
+
+/* Dans OpenEd.c */
+RAM_SECT NO_INL void OpenEd_SRAM_TestWide(u16 *dst, u32 offset, u16 count)
+{
+    u16 saved = ed_cfg;
+
+    asm("move.w #0x2700, %sr");
+    ed_cfg &= ~CTRL_ROM_BANK;
+    ed_cfg |= CTRL_SRM_ON;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+
+    vu16 *src = (vu16 *)(SRAM_BASE + offset);
+    for (u16 i = 0; i < count; i++) {
+        dst[i] = *src++;
+    }
+
+    ed_cfg = saved;
+    *((vu16 *) 0xA130E0) = ed_cfg;
+    asm("move.w #0x2300, %sr");
 }
 
 /* ------------------------------------------------------------------ */

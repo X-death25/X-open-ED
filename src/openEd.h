@@ -2,7 +2,7 @@
  *  \file OpenEd.h
  *  \brief Function to control Open Everdrive custom mapper
  *  \author Krikzz , X-death
- *  \date 10/2024
+ *  \date 07/2026
  *
  * Please visit https://github.com/krikzz/open-ed for more info
  */
@@ -51,6 +51,15 @@
 #define FLASH_TYPE_RAM  0x01  /* RAM (dev boards)                      */
 #define FLASH_TYPE_M29  0x02  /* Flash M29 series (standard)           */
 
+
+/* ------------------------------------------------------------------ */
+/* GAME TYPE on Bank0                                       */
+/* ------------------------------------------------------------------ */
+
+#define GAME_TYPE_NONE  0x00  /* Bank0 vide (0xFF partout)             */
+#define GAME_TYPE_ROM   0x01  /* Jeu sans SRAM                          */
+#define GAME_TYPE_SRAM  0x02  /* Jeu avec SRAM ("RA" dans header)      */
+
 /* ------------------------------------------------------------------ */
 /* Mapper / contrôle général                                            */
 /* ------------------------------------------------------------------ */
@@ -81,10 +90,101 @@ void OpenEd_Set_Bank0(void);
 void OpenEd_Set_Bank1(void);
 
 /**
+ *  \brief Detect current Bank0 game type from header, configure SRAM
+ *         Reads offset $1B0-$1B1 ("RA" = SRAM present)
+ *         Automatically enables/disables SRAM according to detected type
+ */
+void OpenEd_Game_Init(void);
+
+/**
+ *  \brief Get last detected game type
+ *  \return GAME_TYPE_NONE / GAME_TYPE_ROM / GAME_TYPE_SRAM
+ */
+u8 OpenEd_Game_Type(void);
+
+/**
  *  \brief Switch to Bank 0 and jump to ROM start vector
  *         Must run from RAM — cuts Bank1 (BIOS) access
  */
 void OpenEd_Start_ROM(void);
+
+/* ------------------------------------------------------------------ */
+/* SRAM control                                                         */
+/* ------------------------------------------------------------------ */
+
+
+/**
+ *  \brief Enable 128KB SRAM at $200000-$21FFFF
+ *         Warning: makes ROM $200000-$3FFFFF unreachable while enabled
+ */
+void OpenEd_SRAM_Enable(void);
+
+/**
+ *  \brief Disable SRAM, restore full 4MB ROM mapping
+ */
+void OpenEd_SRAM_Disable(void);
+
+/**
+ *  \brief Check if SRAM is currently enabled
+ *  \return 1 if enabled, 0 otherwise
+ */
+ 
+u8 OpenEd_SRAM_IsEnabled(void);
+
+/**
+ *  \brief Read raw data from SRAM into a buffer, odd-byte only (D0-D7)
+ *  \param dst    destination buffer
+ *  \param offset logical byte offset within SRAM data (0 to SRAM_SIZE-1)
+ *  \param len    number of real data bytes to read
+ *
+ *  Reads only the odd (valid) bytes from the CPU address space, skipping
+ *  the unconnected even byte for each. Output buffer is fully packed
+ *  (no padding) — NOT directly compatible with .srm emulator format.
+ */
+void OpenEd_SRAM_ReadBlock(u8 *dst, u32 offset, u32 len);
+
+/**
+ *  \brief Write raw data from a buffer into SRAM, odd-byte only (D0-D7)
+ *  \param src    source buffer (packed, no padding)
+ *  \param offset logical byte offset within SRAM data (0 to SRAM_SIZE-1)
+ *  \param len    number of real data bytes to write
+ *
+ *  Writes only to the odd (valid) bytes in the CPU address space.
+ *  SRAM must be enabled via OpenEd_SRAM_Enable() by the caller if not
+ *  already done — this function does not toggle SRAM enable state.
+ */
+void OpenEd_SRAM_WriteBlock(const u8 *src, u32 offset, u32 len);
+
+void OpenEd_SRAM_SingleTest(void);
+
+u8 SRAM_DumpWide(const char *path, u32 startAddr, u32 len);
+
+RAM_SECT NO_INL void OpenEd_SRAM_TestWide(u16 *dst, u32 offset, u16 count);
+
+/* ------------------------------------------------------------------ */
+/* SRAM <-> SD backup / restore                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ *  \brief Dump SRAM content to a .srm file on SD, in emulator-compatible
+ *         format (0xFF padding re-inserted on even bytes)
+ *  \param path         destination file path on SD (e.g. "/SAVES/game.srm")
+ *  \param realDataSize number of real SRAM data bytes to dump
+ *  \return 1 on success, 0 on failure (SD open/write error)
+ */
+u8 SRAM_DumpToSD(const char *path, u32 realDataSize);
+
+u8 SRAM_DumpToSD_Emu(const char *path, u32 realDataSize);
+
+/**
+ *  \brief Restore SRAM content from a .srm file on SD (emulator-compatible
+ *         format, padding stripped on read)
+ *  \param path         source file path on SD
+ *  \param realDataSize number of real SRAM data bytes to restore
+ *  \return 1 on success, 0 on failure (SD open/read error)
+ */
+u8 SRAM_RestoreFromSD(const char *path, u32 realDataSize);
+
 
 /* ------------------------------------------------------------------ */
 /* SPI                                                                  */

@@ -1,6 +1,7 @@
 #include "genesis.h"
 #include "explorer.h"
 #include "rom_parser.h"
+#include "sram_manager.h"
 
 #define logo_lib sgdk_logo
 #define font_lib font_default
@@ -34,7 +35,7 @@ static void UpdateMenu(int PosX, int PosY);
 
 int main(bool hardReset)
 {
-    u16 ind, idx1, idx2;
+    u16 ind, idx1, idx2 , idx3;
     FIL    Fil;
     UINT   bw;
     FRESULT res;
@@ -43,15 +44,21 @@ int main(bool hardReset)
     VDP_setScreenWidth320();
     OpenEd_Init();
     OpenEd_Flash_Init();
+	OpenEd_Game_Init();
     JOY_setEventHandler(joyEvent);
 
     PAL_setColors(0, (u16*)main_title.palette->data, 16, CPU);
+	PAL_setPalette(PAL1, sram_palette.data, DMA);
 
-    ind = TILE_USER_INDEX;
-    ind += main_title.tileset->numTile;
-    idx1 = ind;
-    ind += main_bottom.tileset->numTile;
-    idx2 = ind;
+	ind = TILE_USER_INDEX;
+	ind += main_title.tileset->numTile;
+	idx1 = ind;
+	ind += main_bottom.tileset->numTile;
+	idx2 = ind;
+
+	VDP_loadTileSet(&sram_tileset, idx2*2, DMA);
+	
+
 
     VDP_drawImageEx(BG_A, &main_title,  TILE_ATTR_FULL(PAL0, FALSE, FALSE, FALSE, idx1), 0,  1, FALSE, DMA);
     VDP_drawImageEx(BG_A, &main_bottom, TILE_ATTR_FULL(PAL0, FALSE, FALSE, FALSE, idx2), 0, 20, FALSE, DMA);
@@ -62,7 +69,9 @@ int main(bool hardReset)
     VDP_drawText("SRAM Manager",     12, 12);
     VDP_drawText("Hardware Info",    12, 14);
     VDP_drawText("Options", 12, 16);
-    VDP_drawText("Flash Write Test", 12, 18);
+    VDP_drawText("Dump SRAM to SD", 12, 18);
+	
+	
 
     PosX = 10;
     PosY = 8;
@@ -73,6 +82,13 @@ int main(bool hardReset)
     OpenEd_DebugLed_ON();
     dly_10ms();
     OpenEd_DebugLed_OFF();
+	
+	/* Log SRAM Type */
+	
+	char gtype[4];
+	intToStr(OpenEd_Game_Type(), gtype, 1);
+	VDP_drawText("Game type:  ", 0, 24);
+	VDP_drawText(gtype, 12, 24);
 
     /* Log type flash */
     char ftype[4];
@@ -134,7 +150,7 @@ int main(bool hardReset)
 static void joyEvent(u16 joy, u16 changed, u16 state)
 {
 
-    if (appMode == 1)
+    if (appMode == 1)  // SD Card Explorer
     {
         if (changed & state & BUTTON_A) Explorer_select();
         if (changed & state & BUTTON_B) Explorer_goBack();
@@ -160,6 +176,27 @@ static void joyEvent(u16 joy, u16 changed, u16 state)
         }
         return;
     }
+	
+	if (appMode == 2)   // SRAM Manager
+	{
+    SRAM_Manager_HandleInput(joy, changed, state);
+    if (!SRAM_Manager_IsOpen()) {
+        /* Retour menu principal */
+        appMode = 0;
+        ClearMenuFull();
+        /* Redessiner le menu principal — refactoriser ce bloc en fonction */
+       // VDP_drawImageEx(BG_A, &main_title,  TILE_ATTR_FULL(PAL0, FALSE, FALSE, FALSE, idx1), 0,  1, FALSE, DMA);
+        //VDP_drawImageEx(BG_A, &main_bottom, TILE_ATTR_FULL(PAL0, FALSE, FALSE, FALSE, idx2), 0, 20, FALSE, DMA);
+        VDP_drawText(">",                10,  8);
+        VDP_drawText("Start Game",       12,  8);
+        VDP_drawText("SD Card Explorer", 12, 10);
+        VDP_drawText("SRAM Manager",     12, 12);
+        VDP_drawText("Hardware Info",    12, 14);
+        VDP_drawText("Options", 12, 16);
+        VDP_drawText("Dump SRAM to SD", 12, 18);
+    }
+    return;
+}
 
     if (changed & state & BUTTON_A)  UpdateMenu(PosX, PosY);
     if (changed & state & BUTTON_B) {
@@ -201,6 +238,7 @@ static void UpdateMenu(int PosX, int PosY)
 {
     if (PosX == 10 && PosY == 8)
     {
+		OpenEd_Game_Init(); 
         OpenEd_Start_ROM();
     }
 
@@ -212,6 +250,12 @@ static void UpdateMenu(int PosX, int PosY)
         Explorer_loadDir("/");
         Explorer_draw(&FatFs);
     }
+	
+	if (PosX == 10 && PosY == 12)   /* SRAM Manager */
+	{
+		appMode = 2;
+		SRAM_Manager_Open(&FatFs);
+	}
 
     if (PosX == 10 && PosY == 14)
     {
@@ -248,11 +292,12 @@ static void UpdateMenu(int PosX, int PosY)
         VDP_drawText(r ? "Erase OK !          " : "Erase FAIL !        ", 0, 24);
     }
 
-    /* Flash Write Test — secteur doit être effacé avant ! */
-    if (PosX == 10 && PosY == 18)
-    {
-        VDP_drawText("Writing 0x080000...     ", 0, 24);
-        u8 r = OpenEd_Flash_TestWrite(0x080000);
-        VDP_drawText(r ? "Write OK !          " : "Write FAIL !        ", 0, 24);
-    }
+	/* Dump SRAM to SD */
+	if (PosX == 10 && PosY == 18)
+	{
+		 VDP_drawText("Dumping SRAM...          ", 0, 24);
+		u8 r = SRAM_DumpToSD_Emu("/SAVES/sram_fixed_emu.srm", 0x20000);   /* 128 Ko complet */
+		VDP_drawText(r ? "Dump OK !                " : "Dump FAIL !              ", 0, 24);
+		//u8 r = SRAM_DumpWide("/SAVES/sram_only.bin", 0x200000, 0x40000);
+	}
 }
