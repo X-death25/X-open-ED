@@ -3,5 +3,7 @@
 
 extern const Image main_bottom;
 extern const Image main_title;
+extern const TileSet sram_tileset;
+extern const Palette sram_palette;
 
 #endif // _RES_GFX_H_
