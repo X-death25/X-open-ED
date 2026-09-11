@@ -2,7 +2,7 @@
  *  \file OpenEd.h
  *  \brief Function to control Open Everdrive custom mapper
  *  \author Krikzz , X-death
- *  \date 09/2026
+ *  \date 07/2026
  *
  * Please visit https://github.com/krikzz/open-ed for more info
  */
@@ -214,4 +214,122 @@ u8 SRAM_DumpWide(const char *path, u32 startAddr, u32 len);
 u8 SRAM_DumpToSD(const char *path, u32 realDataSize);
 
 /**
- *  \brief Dump SRAM content to a .srm
+ *  \brief Dump SRAM content to a .srm file on SD, in emulator-compatible
+ *         format (0x00 padding inserted before each real data byte,
+ *         matching real Gens/BlastEm .srm files)
+ *  \param path         destination file path on SD (e.g. "/SAVES/game.srm")
+ *  \param realDataSize number of real SRAM data bytes to dump
+ *  \return 1 on success, 0 on failure (SD open/write error)
+ */
+u8 SRAM_DumpToSD_Emu(const char *path, u32 realDataSize);
+
+/**
+ *  \brief Restore SRAM content from a file on SD, compact format
+ *         (see SRAM_DumpToSD)
+ *  \param path         source file path on SD
+ *  \param realDataSize number of real SRAM data bytes to restore
+ *  \return 1 on success, 0 on failure (SD open/read error)
+ */
+u8 SRAM_RestoreFromSD(const char *path, u32 realDataSize);
+
+/**
+ *  \brief Restore SRAM content from a .srm file on SD, emulator-compatible
+ *         format (see SRAM_DumpToSD_Emu). Erases the whole SRAM chip
+ *         first, then restores only up to the file's actual real data
+ *         size — the real size is read from the file itself (f_size),
+ *         maxSize is only a safety cap against runaway reads
+ *  \param path    source file path on SD
+ *  \param maxSize maximum number of real SRAM data bytes to restore
+ *                 (safety cap, e.g. SRAM_SIZE)
+ *  \return 1 on success, 0 on failure (SD open/read error)
+ */
+u8 SRAM_RestoreFromSD_Emu(const char *path, u32 maxSize);
+
+/* ------------------------------------------------------------------ */
+/* SPI                                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ *  \brief Select SPI target
+ *  \param target SPI_SEL_OFF / SPI_SEL_SDC / SPI_SEL_EXP
+ */
+void OpenEd_SPI_Select(unsigned char target);
+
+/**
+ *  \brief Read one byte from SPI bus (MOSI idle high)
+ */
+unsigned char OpenEd_SPI_Read(void);
+
+/**
+ *  \brief Read one byte using auto-CLK hardware feature
+ *         Faster than OpenEd_SPI_Read — use for bulk data reads
+ */
+unsigned char OpenEd_SPI_ReadFast(void);
+
+/**
+ *  \brief Write one byte to SPI bus
+ */
+void OpenEd_SPI_Write(unsigned char val);
+
+/**
+ *  \brief Full-duplex SPI — write and read simultaneously
+ *         Equivalent to spi_rw() in Krikzz original code
+ */
+unsigned char OpenEd_SPI_Read_Write(unsigned char val);
+
+/* ------------------------------------------------------------------ */
+/* Flash                                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ *  \brief Detect and init flash chip (RAM or M29 series)
+ *         Must be called after OpenEd_Init()
+ */
+void OpenEd_Flash_Init(void);
+
+/**
+ *  \brief Erase a 64KB sector at given address
+ *  \param addr  Start address of sector (must be 64KB aligned)
+ *  \param wait_rdy  Reserved — erase always waits via data poll
+ */
+void OpenEd_Flash_Erase64K(u32 addr, u8 wait_rdy);
+
+/**
+ *  \brief Write len bytes from src to dst (flash address)
+ *  \param src  Source buffer in RAM
+ *  \param dst  Destination address in flash (Bank0)
+ *  \param len  Size in bytes (must be multiple of 2)
+ */
+void OpenEd_Flash_Write(u16 *src, u16 *dst, u32 len);
+
+/**
+ *  \brief Return detected flash type
+ *  \return FLASH_TYPE_UNK / FLASH_TYPE_RAM / FLASH_TYPE_M29
+ */
+u8 OpenEd_Flash_Type(void);
+
+/**
+ *  \brief Test erase — erases sector and verifies 0xFF
+ *  \param addr  Sector address to test
+ *  \return 1 if OK, 0 if FAIL
+ */
+u8 OpenEd_Flash_TestErase(u32 addr);
+
+/**
+ *  \brief Test write — writes 0xAAAA and verifies
+ *  \param addr  Sector address to test (must be erased first)
+ *  \return 1 if OK, 0 if FAIL
+ */
+u8 OpenEd_Flash_TestWrite(u32 addr);
+
+/**
+ *  \brief Flash a ROM file from SD card to flash memory
+ *         Erases required 64KB sectors then writes file chunk by chunk
+ *         Displays a progress bar on screen during operation
+ *  \param path     Full path to the ROM file on SD card
+ *  \param romSize  Size of the ROM in bytes (from FAT filesystem)
+ *  \return 1 if OK, 0 if FAIL (file open error)
+ */
+RAM_SECT NO_INL u8 ROM_flashFromSD(const char *path, u32 romSize);
+
+#endif /* OPENED_H */
